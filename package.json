@@ -1,0 +1,17 @@
+{
+  "name": "celestia-memoria",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered aviation regulatory document intelligence platform",
+  "scripts": {
+    "dev": "pnpm --filter @celestia/web dev",
+    "dev:backend": "uv --directory services/ai-backend run uvicorn app.main:app --reload --port 8000 --host 0.0.0.0",
+    "dev:all": "concurrently \"pnpm dev\" \"pnpm dev:backend\"",
+    "build": "pnpm --filter @celestia/web build",
+    "lint": "pnpm --filter @celestia/web lint",
+    "typecheck": "pnpm --filter @celestia/shared-types build && pnpm --filter @celestia/web typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
