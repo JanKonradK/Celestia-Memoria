@@ -33,6 +33,8 @@ export interface DocumentChunk {
   section_path: string;
   page_number: number | null;
   token_count: number;
+  clause_id: string;
+  clause_references: string[];
 }
 
 export interface ChunkWithScore extends DocumentChunk {
@@ -50,4 +52,6 @@ export interface SourceReference {
   page_number: number | null;
   chunk_text: string;
   aerodrome_icao: string;
+  clause_id: string;
+  cited_clause: string;
 }
