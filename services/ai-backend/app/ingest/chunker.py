@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-import re
 import logging
+import re
 
 import tiktoken
+
+from app.ingest.clause_extractor import (
+    build_enriched_section_path,
+    extract_clause_id,
+    extract_clause_references,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +53,7 @@ def _split_at_headings(markdown: str) -> list[dict]:
     Returns a list of dicts with 'heading', 'level', 'content', and 'section_path'.
     """
     sections: list[dict] = []
-    heading_stack: list[str] = []
+    heading_stack: list[tuple[str, str | None]] = []
 
     # Split at heading boundaries
     parts = HEADING_PATTERN.split(markdown)
@@ -59,6 +65,7 @@ def _split_at_headings(markdown: str) -> list[dict]:
             "level": 0,
             "content": parts[0].strip(),
             "section_path": "",
+            "clause_id": "",
         })
 
     i = 1
@@ -67,22 +74,36 @@ def _split_at_headings(markdown: str) -> list[dict]:
         heading = parts[i + 1].strip()
         content = parts[i + 2].strip() if i + 2 < len(parts) else ""
 
+        # Extract clause identifier from heading
+        clause_id = extract_clause_id(heading)
+
         # Update heading stack for section path
         while len(heading_stack) >= level:
             heading_stack.pop()
-        heading_stack.append(heading)
+        heading_stack.append((heading, clause_id))
 
-        section_path = " > ".join(heading_stack)
+        section_path = build_enriched_section_path(heading_stack)
 
         sections.append({
             "heading": heading,
             "level": level,
-            "content": f"{'#' * level} {heading}\n\n{content}" if content else f"{'#' * level} {heading}",
+            "content": (
+                f"{'#' * level} {heading}\n\n{content}"
+                if content
+                else f"{'#' * level} {heading}"
+            ),
             "section_path": section_path,
+            "clause_id": clause_id or "",
         })
         i += 3
 
-    return sections if sections else [{"heading": "", "level": 0, "content": markdown, "section_path": ""}]
+    if not sections:
+        fallback = {
+            "heading": "", "level": 0, "content": markdown,
+            "section_path": "", "clause_id": "",
+        }
+        return [fallback]
+    return sections
 
 
 def chunk_markdown(
@@ -112,12 +133,14 @@ def chunk_markdown(
     chunk_index = 0
     current_text = ""
     current_section_path = ""
+    current_clause_id = ""
     overlap_text = ""
 
     for section in sections:
         section_text = section["content"]
         section_tokens = count_tokens(section_text)
         section_path = section["section_path"]
+        clause_id = section.get("clause_id", "")
 
         if section_tokens > target_tokens:
             # Section is too large — flush current buffer and split the section
@@ -128,6 +151,7 @@ def chunk_markdown(
                         **metadata,
                         "chunk_text": current_text.strip(),
                         "section_path": current_section_path,
+                        "clause_id": current_clause_id,
                         "chunk_index": chunk_index,
                         "token_count": token_count,
                     })
@@ -151,6 +175,7 @@ def chunk_markdown(
                             **metadata,
                             "chunk_text": buffer.strip(),
                             "section_path": section_path,
+                            "clause_id": clause_id,
                             "chunk_index": chunk_index,
                             "token_count": token_count,
                         })
@@ -162,6 +187,7 @@ def chunk_markdown(
 
             current_text = buffer
             current_section_path = section_path
+            current_clause_id = clause_id
         else:
             # Section fits — try to merge with current buffer
             test_text = f"{current_text}\n\n{section_text}" if current_text else section_text
@@ -172,6 +198,7 @@ def chunk_markdown(
                         **metadata,
                         "chunk_text": current_text.strip(),
                         "section_path": current_section_path,
+                        "clause_id": current_clause_id,
                         "chunk_index": chunk_index,
                         "token_count": token_count,
                     })
@@ -179,10 +206,13 @@ def chunk_markdown(
                     chunk_index += 1
                 current_text = f"{overlap_text}\n\n{section_text}" if overlap_text else section_text
                 current_section_path = section_path
+                current_clause_id = clause_id
             else:
                 current_text = test_text
                 if not current_section_path:
                     current_section_path = section_path
+                if not current_clause_id:
+                    current_clause_id = clause_id
 
     # Flush remaining buffer
     if current_text.strip():
@@ -192,6 +222,7 @@ def chunk_markdown(
                 **metadata,
                 "chunk_text": current_text.strip(),
                 "section_path": current_section_path,
+                "clause_id": current_clause_id,
                 "chunk_index": chunk_index,
                 "token_count": token_count,
             })
@@ -200,6 +231,10 @@ def chunk_markdown(
             last = chunks[-1]
             last["chunk_text"] = f"{last['chunk_text']}\n\n{current_text.strip()}"
             last["token_count"] = count_tokens(last["chunk_text"])
+
+    # Enrich each chunk with clause references found in its text
+    for chunk in chunks:
+        chunk["clause_references"] = extract_clause_references(chunk["chunk_text"])
 
     logger.info(
         "Chunked document into %d chunks (target=%d tokens)",
