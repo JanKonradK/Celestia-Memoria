@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const MAX_MESSAGE_LENGTH = 10_000;
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -18,7 +19,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No message content" }, { status: 400 });
   }
 
-  const accessToken = (session as any).accessToken || "";
+  if (
+    typeof lastMessage.content !== "string" ||
+    lastMessage.content.length > MAX_MESSAGE_LENGTH
+  ) {
+    return NextResponse.json(
+      { error: `Message must be a string of at most ${MAX_MESSAGE_LENGTH} characters` },
+      { status: 400 }
+    );
+  }
+
+  const accessToken = session.accessToken ?? "";
 
   try {
     const response = await fetch(`${BACKEND_URL}/chat/stream`, {
@@ -35,6 +46,7 @@ export async function POST(request: NextRequest) {
               content: lastMessage.content,
             },
           ],
+          // Router node computes these — provide empty defaults for LangServe schema
           intent: "",
           requires_rag: false,
           query_rewrite: "",
@@ -43,6 +55,7 @@ export async function POST(request: NextRequest) {
           final_response: "",
           sources: [],
           node_trace: [],
+          // Client-controlled fields
           model_slug,
           aerodrome_icao,
         },
@@ -51,8 +64,9 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error("Backend error:", response.status, errorText);
       return NextResponse.json(
-        { error: `Backend error: ${errorText}` },
+        { error: "Failed to get response from AI backend" },
         { status: response.status }
       );
     }
@@ -80,34 +94,45 @@ export async function POST(request: NextRequest) {
             buffer = lines.pop() || "";
 
             for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                const data = line.slice(6).trim();
-                if (data === "[DONE]") continue;
+              if (!line.startsWith("data: ")) continue;
 
-                try {
-                  const parsed = JSON.parse(data);
-                  // Extract the text content from LangServe stream events
-                  if (parsed.ops) {
-                    for (const op of parsed.ops) {
-                      if (
-                        op.path === "/final_response" &&
-                        op.op === "replace"
-                      ) {
-                        const text = op.value || "";
-                        controller.enqueue(
-                          encoder.encode(`0:${JSON.stringify(text)}\n`)
-                        );
-                      }
-                    }
+              const data = line.slice(6).trim();
+              if (data === "[DONE]") continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                if (!parsed.ops || !Array.isArray(parsed.ops)) continue;
+
+                for (const op of parsed.ops) {
+                  if (
+                    op.path === "/final_response" &&
+                    op.op === "replace" &&
+                    typeof op.value === "string"
+                  ) {
+                    controller.enqueue(
+                      encoder.encode(`0:${JSON.stringify(op.value)}\n`)
+                    );
                   }
-                } catch {
-                  // Skip unparseable lines
+                  if (
+                    op.path === "/sources" &&
+                    op.op === "replace" &&
+                    Array.isArray(op.value)
+                  ) {
+                    controller.enqueue(
+                      encoder.encode(
+                        `8:${JSON.stringify([{ sources: op.value }])}\n`
+                      )
+                    );
+                  }
                 }
+              } catch {
+                // Skip unparseable SSE lines — non-JSON keep-alive or malformed events
+                console.warn("Skipping unparseable SSE line:", data.slice(0, 100));
               }
             }
           }
         } catch (err) {
-          console.error("Stream error:", err);
+          console.error("Stream processing error:", err);
         } finally {
           controller.close();
         }
