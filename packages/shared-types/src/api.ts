@@ -22,9 +22,13 @@ export interface ChatRequest {
   model_slug?: string;
 }
 
+/** LangServe streaming event (JSONPatch format). */
 export interface ChatStreamEvent {
-  type: "token" | "sources" | "done" | "error";
-  data: string;
+  ops: Array<{
+    path: string;
+    op: "replace" | "add" | "remove";
+    value?: unknown;
+  }>;
 }
 
 export interface HealthResponse {
