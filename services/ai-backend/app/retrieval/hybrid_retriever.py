@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from app.config import get_settings
@@ -40,6 +41,11 @@ class HybridRetriever:
             List of reranked result dicts with chunk text and metadata.
         """
         if self._settings.USE_LOCAL_MODE:
+            if alpha != 0.6:
+                logger.warning(
+                    "Hybrid alpha=%.2f ignored in local mode (cosine similarity only)",
+                    alpha,
+                )
             results = await self._retrieve_local(
                 query, aerodrome, doc_type_filter, top_k
             )
@@ -78,8 +84,8 @@ class HybridRetriever:
         top_k: int,
     ) -> list[dict]:
         """Retrieve from Pinecone using hybrid search."""
-        from app.retrieval.pinecone_client import query_hybrid
         from app.retrieval.bm25_encoder import get_encoder
+        from app.retrieval.pinecone_client import query_hybrid
 
         # Embed query
         dense_vector = embed_query(query)
@@ -121,6 +127,8 @@ class HybridRetriever:
                     "section_path": meta.get("section_path", ""),
                     "page_number": meta.get("page_number"),
                     "aerodrome_icao": meta.get("aerodrome_icao", "GLOBAL"),
+                    "clause_id": meta.get("clause_id", ""),
+                    "clause_references": json.loads(meta.get("clause_references", "[]")),
                 })
 
         all_results.sort(key=lambda x: x["score"], reverse=True)
@@ -160,6 +168,8 @@ class HybridRetriever:
                 "section_path": r.get("section_path", ""),
                 "page_number": r.get("page_number"),
                 "aerodrome_icao": r.get("aerodrome_icao", "GLOBAL"),
+                "clause_id": r.get("clause_id", ""),
+                "clause_references": json.loads(r.get("clause_references", "[]")),
             }
             for r in results
         ]
