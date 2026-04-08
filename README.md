@@ -1,5 +1,7 @@
 # Celestia Memoria
 
+[![CI](https://github.com/JanKonradK/Celestia-Memoria/actions/workflows/ci.yml/badge.svg)](https://github.com/JanKonradK/Celestia-Memoria/actions/workflows/ci.yml)
+
 AI-powered aviation regulatory document intelligence platform. Celestia Memoria uses Retrieval-Augmented Generation (RAG) to help air traffic controllers quickly find and understand information from ICAO documents, EASA regulations, AIPs, unit manuals, and other official aviation publications.
 
 ## Architecture
@@ -207,16 +209,36 @@ Set `USE_LOCAL_MODE=true` to run entirely locally:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
 | `BACKEND_URL` | No | Backend URL (default: http://localhost:8000) |
 
+## Docker
+
+```bash
+# Full stack (frontend + backend + Ollama)
+docker compose up
+
+# Backend only
+docker compose up backend
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment with Vercel + Railway.
+
 ## Testing
 
 ```bash
-# Backend tests
+# Backend unit tests
 cd services/ai-backend
 uv run pytest
 
 # With coverage
 uv run pytest --cov=app --cov-report=term-missing
+
+# Frontend type checking + linting
+pnpm typecheck && pnpm lint
+
+# All checks (CI equivalent)
+pnpm typecheck && pnpm lint && cd services/ai-backend && uv run ruff check . && uv run pytest
 ```
+
+See [TESTING.md](TESTING.md) for full testing documentation.
 
 ## Technology Stack
 
@@ -233,14 +255,32 @@ uv run pytest --cov=app --cov-report=term-missing
 | LLM Provider | OpenRouter (prod) / Ollama (local) |
 | Reranking | Cohere rerank-english-v3.0 |
 | PDF Processing | PyMuPDF / pymupdf4llm |
+| Monitoring | Sentry (error tracking + performance) |
 | Package Managers | pnpm (JS), uv (Python) |
+| CI/CD | GitHub Actions |
+| Containerization | Docker, Docker Compose |
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture, data flow diagrams, design decisions |
+| [API.md](API.md) | Complete API reference with curl examples |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment guide (Vercel + Railway) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, code style, PR process |
+| [TESTING.md](TESTING.md) | Testing strategy, running tests, writing tests |
+| [SECURITY.md](SECURITY.md) | Security model, auth flow, threat assessment |
+| [CLAUDE.md](CLAUDE.md) | Developer conventions, adding features |
+| [data/README.md](data/README.md) | Document placement and ingestion guidelines |
 
 ## Contributing
 
-1. Read [`CLAUDE.md`](CLAUDE.md) for project conventions and architecture details
-2. Check `data/README.md` for document placement guidelines
-3. Run tests before submitting changes
-4. Follow existing code patterns — the codebase is consistent by design
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Quick summary:
+
+1. Read [CLAUDE.md](CLAUDE.md) for project conventions
+2. Create a feature branch from `main`
+3. Run all checks: `pnpm typecheck && pnpm lint && cd services/ai-backend && uv run ruff check . && uv run pytest`
+4. Open a PR with a conventional commit title
 
 ## License
 
