@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +36,9 @@ class BM25Encoder:
     """Thin wrapper around pinecone-text BM25 encoder with corpus management."""
 
     def __init__(self):
-        from pinecone_text.sparse import BM25Encoder as _BM25
+        from pinecone_text.sparse import BM25Encoder as _PineconeBM25
 
-        self._encoder = _BM25()
+        self._encoder = _PineconeBM25()
         self._fitted = False
 
     def fit(self, corpus: list[str]) -> None:
