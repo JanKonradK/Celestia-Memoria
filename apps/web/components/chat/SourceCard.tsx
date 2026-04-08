@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronDown, ChevronRight, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -14,16 +14,20 @@ interface SourceCardProps {
     chunk_text?: string;
     doc_type?: string;
     aerodrome_icao?: string;
+    clause_id?: string;
+    cited_clause?: string;
   };
 }
 
-export function SourceCard({ source }: SourceCardProps) {
+export const SourceCard = memo(function SourceCard({ source }: SourceCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="rounded-md border bg-background text-foreground">
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        aria-label={`Source ${source.index}: ${source.doc_name || "Unknown document"}`}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted/50"
       >
         {expanded ? (
@@ -33,6 +37,11 @@ export function SourceCard({ source }: SourceCardProps) {
         )}
         <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="font-medium">[{source.label}]</span>
+        {(source.clause_id || source.cited_clause) && (
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary">
+            {source.cited_clause || source.clause_id}
+          </span>
+        )}
         {source.doc_name && (
           <span className="truncate text-muted-foreground">
             {source.doc_name}
@@ -69,4 +78,4 @@ export function SourceCard({ source }: SourceCardProps) {
       )}
     </div>
   );
-}
+});
