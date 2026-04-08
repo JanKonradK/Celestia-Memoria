@@ -25,6 +25,7 @@ dependencies = [
     "watchdog>=6.0.0",
     "httpx>=0.28.0",
     "sentence-transformers>=3.4.0",
+    "sentry-sdk[fastapi]>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -45,3 +46,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "evaluation: evaluation tests for citation accuracy, grounding, and refusal",
+    "integration: tests requiring Ollama or external APIs",
+]
