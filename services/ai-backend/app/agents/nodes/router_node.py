@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from app.agents.state import AgentState
@@ -28,7 +27,12 @@ document assistant used by air traffic controllers. Your job is to analyze the u
    - Set requires_rag=false for general queries
 
 3. Rewrite the query to be optimal for semantic search over aviation documents:
-   - Expand abbreviations (e.g., "RVR" -> "Runway Visual Range (RVR)")
+   - If the user mentions a specific clause number (e.g., "4.6.1", "ENR 1.1"), preserve it
+     verbatim in the rewrite and add surrounding context
+   - Expand abbreviations with both forms (e.g., "RVR" -> "Runway Visual Range (RVR)")
+   - If a specific document is mentioned, include its full title:
+     Doc 4444 = "Procedures for Air Navigation Services — Air Traffic Management (PANS-ATM)"
+     Doc 7030 = "Regional Supplementary Procedures"
    - Add relevant context terms
    - Make the query self-contained (don't rely on conversation history)
    - Keep it concise but specific

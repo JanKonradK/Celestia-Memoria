@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import logging
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
-from app.agents.state import AgentState
-from app.agents.nodes.router_node import router_node
 from app.agents.nodes.retrieval_node import retrieval_node
+from app.agents.nodes.router_node import router_node
 from app.agents.nodes.synthesis_node import synthesis_node
+from app.agents.state import AgentState
 
 logger = logging.getLogger(__name__)
 
