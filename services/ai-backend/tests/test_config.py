@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import pytest
-
 
 def test_settings_loads_defaults():
     """Settings should load with defaults when env vars are not set."""

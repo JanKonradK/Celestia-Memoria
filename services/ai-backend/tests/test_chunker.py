@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from app.ingest.chunker import chunk_markdown, count_tokens, _split_at_headings
+from app.ingest.chunker import _split_at_headings, chunk_markdown, count_tokens
 
 
 class TestCountTokens:

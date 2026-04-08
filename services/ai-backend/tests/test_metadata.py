@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 
 from app.ingest.metadata import (
-    validate_icao_code,
-    validate_doc_type,
-    validate_date,
-    normalize_metadata,
-    infer_metadata_from_path,
     MetadataValidationError,
+    infer_metadata_from_path,
+    normalize_metadata,
+    validate_date,
+    validate_doc_type,
+    validate_icao_code,
 )
 
 
