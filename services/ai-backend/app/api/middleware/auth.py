@@ -45,6 +45,10 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
         # Production mode: validate JWT
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
+            logger.warning(
+                "Auth failed: missing/invalid Authorization header from %s %s",
+                request.method, path,
+            )
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid Authorization header"},
@@ -53,8 +57,12 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
         token = auth_header[7:]  # Strip "Bearer "
 
         try:
-            from jose import jwt, JWTError, ExpiredSignatureError
+            from jose import ExpiredSignatureError, JWTError, jwt
 
+            # Note: verify_aud=False because Supabase JWTs use "authenticated" as
+            # the audience claim, which is not a custom value we control. The JWT
+            # signature verification (via SUPABASE_JWT_SECRET) is the primary
+            # security control.
             payload = jwt.decode(
                 token,
                 settings.SUPABASE_JWT_SECRET,
@@ -68,18 +76,24 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
             )
 
             if not request.state.user_id:
+                logger.warning(
+                    "Auth failed: JWT missing subject for %s %s", request.method, path,
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid token: missing subject"},
                 )
 
         except ExpiredSignatureError:
+            logger.info("Auth failed: expired token for %s %s", request.method, path)
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Token has expired"},
             )
         except JWTError as e:
-            logger.warning("JWT validation failed: %s", e)
+            logger.warning(
+                "Auth failed: JWT validation error for %s %s: %s", request.method, path, e,
+            )
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid token"},
