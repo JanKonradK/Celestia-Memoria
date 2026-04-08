@@ -69,7 +69,7 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
     setSuccess("");
 
     try {
-      const accessToken = (session as any)?.accessToken || "";
+      const accessToken = (session as { accessToken?: string } | null)?.accessToken || "";
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "/api";
 
       // For local mode, send the file name as storage_path
