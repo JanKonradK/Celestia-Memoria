@@ -22,11 +22,23 @@ uv --directory services/ai-backend run uvicorn app.main:app --reload --port 8000
 # Both together
 pnpm dev:all
 
+# Docker (full stack)
+docker compose up
+
 # Backend tests
 cd services/ai-backend && uv run pytest
 
+# Backend linting
+cd services/ai-backend && uv run ruff check .
+
 # Type checking
 pnpm typecheck
+
+# Frontend linting
+pnpm lint
+
+# All checks (CI equivalent)
+pnpm typecheck && pnpm lint && cd services/ai-backend && uv run ruff check . && uv run pytest
 ```
 
 ## Architecture
@@ -109,4 +121,23 @@ Set `USE_LOCAL_MODE=true` in `services/ai-backend/.env`:
 
 ### New API Endpoint
 1. Create route in `services/ai-backend/app/api/routes/`
-2. Include router in `services/ai-backend/app/main.py`
+2. Define Pydantic request/response models with validation
+3. Include router in `services/ai-backend/app/main.py`
+4. Add TypeScript types to `packages/shared-types/src/api.ts`
+
+## Infrastructure
+
+- **CI/CD**: GitHub Actions (`.github/workflows/ci.yml`) — runs typecheck, lint, ruff, pytest on PRs
+- **Docker**: `docker-compose.yml` for local dev, `Dockerfile` in both `services/ai-backend/` and `apps/web/`
+- **Deployment**: Vercel (frontend) + Railway (backend) — see [DEPLOYMENT.md](DEPLOYMENT.md)
+- **Monitoring**: Sentry for error tracking + performance (optional, via `SENTRY_DSN` env var)
+- **Code Quality**: Ruff (Python), ESLint (TypeScript), Prettier (formatting), Turborepo (build orchestration)
+
+## Related Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — detailed system architecture with Mermaid diagrams
+- [API.md](API.md) — complete API reference with curl examples
+- [DEPLOYMENT.md](DEPLOYMENT.md) — production deployment guide
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guidelines and code style
+- [TESTING.md](TESTING.md) — testing strategy and conventions
+- [SECURITY.md](SECURITY.md) — security model and deployment checklist
