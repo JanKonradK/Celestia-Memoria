@@ -10,12 +10,33 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
 from app.api.middleware.auth import SupabaseAuthMiddleware
 from app.api.routes.ingest import router as ingest_router
 from app.api.routes.query import router as query_router
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _init_sentry() -> None:
+    """Initialize Sentry SDK if DSN is configured."""
+    settings = get_settings()
+    if not settings.SENTRY_DSN:
+        return
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+            send_default_pii=False,
+        )
+        logger.info("Sentry initialized")
+    except Exception as e:
+        logger.warning("Failed to initialize Sentry: %s", e)
+
+
+_init_sentry()
 
 
 # Fix Windows console encoding for UTF-8 output
@@ -37,10 +58,9 @@ async def lifespan(app: FastAPI):
         if settings.USE_LOCAL_MODE:
             logger.info("Running in LOCAL mode — external API keys not required")
         else:
-            logger.warning(
-                "Missing required environment variables for production mode: %s. "
-                "Set USE_LOCAL_MODE=true for local development.",
-                ", ".join(missing),
+            raise RuntimeError(
+                f"Missing required environment variables for production mode: "
+                f"{', '.join(missing)}. Set USE_LOCAL_MODE=true for local development."
             )
 
     mode = "LOCAL" if settings.USE_LOCAL_MODE else "PRODUCTION"
@@ -55,8 +75,8 @@ async def lifespan(app: FastAPI):
     # Start file watcher if enabled
     watcher = None
     if settings.ENABLE_WATCHER:
-        from app.watcher.directory_watcher import DirectoryWatcher
         from app.watcher.auto_ingest import ingest_local_file, scan_data_directory
+        from app.watcher.directory_watcher import DirectoryWatcher
 
         watcher = DirectoryWatcher()
         watcher.start(ingest_local_file)
@@ -106,8 +126,9 @@ def create_app() -> FastAPI:
     app.add_middleware(SupabaseAuthMiddleware)
 
     # LangServe chat endpoint
-    from app.agents.graph import get_graph
     from langserve import add_routes
+
+    from app.agents.graph import get_graph
 
     add_routes(app, get_graph(), path="/chat")
 

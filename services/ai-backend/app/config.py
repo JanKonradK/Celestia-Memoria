@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     COHERE_API_KEY: str = ""
     COHERE_RERANK_MODEL: str = "rerank-english-v3.0"
     COHERE_RERANK_TOP_N: int = 10
+    RERANK_MIN_SCORE: float = 0.15
+    RERANK_MIN_SCORE_LOCAL: float = 0.3
+
+    # --- Retrieval ---
+    RETRIEVAL_TOP_K: int = 20
+    RETRIEVAL_ALPHA: float = 0.6
 
     # --- Ollama (local mode) ---
     OLLAMA_BASE_URL: str = "http://localhost:11434"
@@ -50,6 +56,10 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # --- Sentry ---
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
 
     # --- Server ---
     PORT: int = 8000
