@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 
 from langchain_openai import ChatOpenAI
 
@@ -55,6 +54,8 @@ def _get_openrouter_llm(model_slug: str) -> ChatOpenAI:
         openai_api_base=settings.OPENROUTER_BASE_URL,
         temperature=0.1,
         max_tokens=4096,
+        request_timeout=60,
+        max_retries=2,
         model_kwargs={
             "extra_headers": {
                 "HTTP-Referer": settings.FRONTEND_URL,
@@ -80,6 +81,8 @@ def _get_ollama_llm(model_slug: str) -> ChatOpenAI:
         openai_api_base=f"{settings.OLLAMA_BASE_URL}/v1",
         temperature=0.1,
         max_tokens=4096,
+        request_timeout=120,
+        max_retries=2,
     )
 
     logger.debug("Created Ollama LLM: %s", model_id)
