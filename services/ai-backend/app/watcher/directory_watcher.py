@@ -6,8 +6,8 @@ import logging
 import threading
 from pathlib import Path
 
+from watchdog.events import FileCreatedEvent, FileMovedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
 
 logger = logging.getLogger(__name__)
 

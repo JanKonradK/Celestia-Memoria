@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from app.ingest.metadata import infer_metadata_from_path
-from app.ingest.pipeline import run_pipeline, generate_document_id
+from app.ingest.pipeline import generate_document_id, run_pipeline
 
 logger = logging.getLogger(__name__)
 
