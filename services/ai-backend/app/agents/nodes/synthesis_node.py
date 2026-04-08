@@ -12,25 +12,55 @@ from app.llm.openrouter import get_llm
 
 logger = logging.getLogger(__name__)
 
-SYNTHESIS_SYSTEM_PROMPT = """You are Celestia Memoria, an AI assistant for air traffic controllers.
-You help them quickly find and understand aviation regulatory information from ICAO documents,
-EASA regulations, AIPs, unit manuals, and other official aviation publications.
+SYNTHESIS_SYSTEM_PROMPT = """\
+You are Celestia Memoria, an AI assistant for air traffic controllers. You help them find \
+and understand aviation regulatory information from ICAO documents, EASA regulations, AIPs, \
+unit manuals, and other official aviation publications.
 
-You have been provided with relevant document excerpts below. Follow these rules strictly:
+## STRICT GROUNDING RULES
 
-1. **Always cite sources** using [Source N] notation when referencing specific information.
-   Place the citation immediately after the relevant statement.
-2. **Never reproduce entire sections** verbatim — summarize and reference.
-3. **State clearly when information is not found** in the provided sources. Say "I could not find
-   this information in the available documents" rather than guessing.
-4. **Never fabricate regulatory requirements.** If you're unsure, say so.
-5. **Be concise** — controllers need fast, accurate answers during operations.
-6. **Include source citations for specific values** like minima, distances, altitudes, frequencies.
+1. You MUST ONLY use information from the Retrieved Document Sources provided below. \
+Do NOT use your general aviation knowledge to supplement or fill gaps.
+2. If the sources do not contain the answer, state this clearly. Never invent or guess \
+regulatory requirements.
 
-If no relevant sources were found, answer based on your general knowledge but clearly indicate
-that the answer is not from the indexed documents."""
+## CITATION FORMAT
 
-SOURCE_PATTERN = re.compile(r"\[Source\s+(\d+)\]")
+1. After each factual statement, cite the source using [Source N, <clause>] where <clause> \
+is the specific clause or section identifier shown in the source header (e.g., \
+[Source 1, 4.6.1.2] or [Source 3, ENR 1.1]).
+2. If no clause identifier is shown for a source, use [Source N] alone.
+3. For critical regulatory values (minima, distances, altitudes, frequencies), quote the \
+exact source text in quotation marks, then cite. \
+Example: "The vertical separation minimum shall be 1000 ft below FL 410" [Source 2, 3.1.2]
+
+## WHEN INFORMATION IS NOT FOUND
+
+If the retrieved sources do not contain information relevant to the query:
+- State: "I could not find information about [topic] in the available documents."
+- Do NOT fall back to general knowledge.
+- Suggest the user verify the document has been indexed or rephrase their query.
+
+## OUT-OF-SCOPE QUERIES
+
+If the query is not about aviation regulations, procedures, or standards:
+- State: "This question is outside the scope of aviation regulatory documents. \
+I can only assist with questions about aviation regulations, procedures, and standards."
+
+## PARTIAL ANSWERS
+
+If sources only partially answer the query:
+- Provide the information you CAN cite from sources.
+- Explicitly state what aspects are NOT covered: "The available sources address X \
+[Source N], but do not contain information about Y."
+
+## STYLE
+
+- Be concise. Controllers need fast, accurate answers during operations.
+- State cited information authoritatively. Do not add unnecessary hedging to properly sourced facts.
+- Never reproduce entire document sections verbatim — summarize and cite."""
+
+SOURCE_PATTERN = re.compile(r"\[Source\s+(\d+)(?:,\s*([^\]]+))?\]")
 
 
 def _build_context(chunks: list[dict]) -> str:
@@ -45,9 +75,13 @@ def _build_context(chunks: list[dict]) -> str:
         page = chunk.get("page_number")
         text = chunk.get("chunk_text", "")
 
+        clause_id = chunk.get("clause_id", "")
+
         header = f"[Source {i}] {doc_name}"
         if section:
             header += f" — {section}"
+        if clause_id:
+            header += f" (Clause {clause_id})"
         if page is not None:
             header += f" (p. {page})"
 
@@ -57,13 +91,19 @@ def _build_context(chunks: list[dict]) -> str:
 
 
 def _parse_sources(response_text: str, chunks: list[dict]) -> list[dict]:
-    """Extract [Source N] references from the response and map to chunk metadata."""
-    matches = SOURCE_PATTERN.findall(response_text)
-    seen_indices = set()
-    sources = []
+    """Extract [Source N] and [Source N, clause] references from the response.
 
-    for match in matches:
-        idx = int(match) - 1  # Convert to 0-indexed
+    Maps each reference back to chunk metadata. Supports both formats:
+    - [Source 1] — basic source reference
+    - [Source 1, 4.6.1.2] — source with specific clause citation
+    """
+    seen_indices: set[int] = set()
+    sources: list[dict] = []
+
+    for match in SOURCE_PATTERN.finditer(response_text):
+        idx = int(match.group(1)) - 1  # Convert to 0-indexed
+        cited_clause = (match.group(2) or "").strip()
+
         if idx < 0 or idx >= len(chunks) or idx in seen_indices:
             continue
         seen_indices.add(idx)
@@ -77,6 +117,8 @@ def _parse_sources(response_text: str, chunks: list[dict]) -> list[dict]:
             "page_number": chunk.get("page_number"),
             "chunk_text": chunk.get("chunk_text", "")[:500],
             "aerodrome_icao": chunk.get("aerodrome_icao", "GLOBAL"),
+            "clause_id": chunk.get("clause_id", ""),
+            "cited_clause": cited_clause,
         })
 
     return sources
@@ -110,8 +152,9 @@ async def synthesis_node(state: AgentState) -> dict:
 
 {user_query}
 
-Please answer the user's query based on the document sources above. Remember to cite sources
-using [Source N] notation."""
+Answer the user's query using ONLY the document sources above. Cite specific clause numbers \
+where shown. Quote exact text for numerical values. If the sources do not answer the query, \
+say so clearly."""
 
     llm = get_llm(model_slug)
 
@@ -141,7 +184,10 @@ using [Source N] notation."""
 
     except Exception as e:
         logger.exception("Synthesis failed: %s", e)
-        error_msg = "I apologize, but I encountered an error generating a response. Please try again."
+        error_msg = (
+            "I apologize, but I encountered an error generating a response. "
+            "Please try again."
+        )
         return {
             "messages": [AIMessage(content=error_msg)],
             "final_response": error_msg,
