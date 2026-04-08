@@ -16,7 +16,7 @@ def _get_cohere_client():
     import cohere
 
     settings = get_settings()
-    return cohere.Client(api_key=settings.COHERE_API_KEY)
+    return cohere.Client(api_key=settings.COHERE_API_KEY, timeout=30)
 
 
 def rerank(
@@ -58,12 +58,16 @@ def _rerank_cohere(query: str, results: list[dict], top_n: int) -> list[dict]:
 
     documents = [r.get("chunk_text", "") for r in results]
 
-    response = client.rerank(
-        query=query,
-        documents=documents,
-        model=settings.COHERE_RERANK_MODEL,
-        top_n=min(top_n, len(results)),
-    )
+    try:
+        response = client.rerank(
+            query=query,
+            documents=documents,
+            model=settings.COHERE_RERANK_MODEL,
+            top_n=min(top_n, len(results)),
+        )
+    except Exception as e:
+        logger.warning("Cohere rerank failed, falling back to score-sort: %s", e)
+        return _rerank_local(results, top_n)
 
     reranked = []
     for item in response.results:
@@ -71,10 +75,17 @@ def _rerank_cohere(query: str, results: list[dict], top_n: int) -> list[dict]:
         result["rerank_score"] = item.relevance_score
         reranked.append(result)
 
+    # Filter results below minimum relevance threshold
+    min_score = settings.RERANK_MIN_SCORE
+    pre_filter_count = len(reranked)
+    reranked = [r for r in reranked if r["rerank_score"] >= min_score]
+
     logger.info(
-        "Cohere reranked %d -> %d results (top score: %.3f)",
+        "Cohere reranked %d -> %d results, %d filtered below %.3f (top score: %.3f)",
         len(results),
         len(reranked),
+        pre_filter_count - len(reranked),
+        min_score,
         reranked[0]["rerank_score"] if reranked else 0,
     )
     return reranked
@@ -82,11 +93,23 @@ def _rerank_cohere(query: str, results: list[dict], top_n: int) -> list[dict]:
 
 def _rerank_local(results: list[dict], top_n: int) -> list[dict]:
     """Simple score-based reranking for local dev mode."""
+    settings = get_settings()
     sorted_results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
     truncated = sorted_results[:top_n]
 
     for r in truncated:
         r["rerank_score"] = r.get("score", 0)
 
-    logger.info("Local reranked %d -> %d results", len(results), len(truncated))
+    # Local cosine similarity scores tend higher than Cohere relevance scores
+    min_score = settings.RERANK_MIN_SCORE_LOCAL
+    pre_filter_count = len(truncated)
+    truncated = [r for r in truncated if r["rerank_score"] >= min_score]
+
+    logger.info(
+        "Local reranked %d -> %d results, %d filtered below %.3f",
+        len(results),
+        len(truncated),
+        pre_filter_count - len(truncated),
+        min_score,
+    )
     return truncated
