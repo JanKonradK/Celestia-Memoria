@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date
 
 VALID_DOC_TYPES = frozenset({
     "AIP",

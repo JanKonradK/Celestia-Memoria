@@ -29,7 +29,11 @@ def _build_prefix(metadata: dict) -> str:
     section = metadata.get("section_path", "")
     effective = metadata.get("effective_date", "")
 
+    clause = metadata.get("clause_id", "")
+
     parts = [f"DOC:{doc_type}", f"ICAO:{aerodrome}"]
+    if clause:
+        parts.append(f"CLAUSE:{clause}")
     if section:
         parts.append(f"SECTION:{section}")
     if effective:
@@ -48,6 +52,7 @@ def _get_openai_embeddings():
         model="text-embedding-3-small",
         openai_api_key=settings.OPENROUTER_API_KEY,
         openai_api_base=settings.OPENROUTER_BASE_URL,
+        request_timeout=60,
     )
 
 

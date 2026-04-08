@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
-from pathlib import Path
 
 from app.config import get_settings
-from app.ingest.pdf_parser import parse_pdf_to_markdown, parse_pdf_from_url
-from app.ingest.metadata import normalize_metadata
 from app.ingest.chunker import chunk_markdown
 from app.ingest.embedder import embed_chunks, embedding_to_bytes
+from app.ingest.metadata import normalize_metadata
+from app.ingest.pdf_parser import parse_pdf_from_url, parse_pdf_to_markdown
 
 logger = logging.getLogger(__name__)
 
 
 async def _store_vectors_production(chunks: list[dict], document_id: str) -> None:
     """Upsert chunk vectors into Pinecone (production mode)."""
-    from app.retrieval.pinecone_client import get_index
     from app.retrieval.bm25_encoder import get_encoder
+    from app.retrieval.pinecone_client import get_index
 
     index = get_index()
     bm25 = get_encoder()
@@ -27,6 +27,13 @@ async def _store_vectors_production(chunks: list[dict], document_id: str) -> Non
     for chunk in chunks:
         chunk_id = f"{document_id}_{chunk['chunk_index']}"
         sparse = bm25.encode_documents([chunk["chunk_text"]])[0]
+
+        chunk_text = chunk["chunk_text"]
+        if len(chunk_text) > 40000:
+            logger.warning(
+                "Chunk %s text truncated from %d to 40000 chars for Pinecone metadata",
+                chunk_id, len(chunk_text),
+            )
 
         metadata = {
             "document_id": document_id,
@@ -38,8 +45,10 @@ async def _store_vectors_production(chunks: list[dict], document_id: str) -> Non
             "effective_date": chunk.get("effective_date", ""),
             "expiry_date": chunk.get("expiry_date", ""),
             "is_current": chunk.get("is_current", True),
-            "chunk_text": chunk["chunk_text"][:40000],  # Pinecone metadata limit
+            "chunk_text": chunk["chunk_text"][:40000],
             "aerodrome_icao": chunk.get("aerodrome_icao", "GLOBAL"),
+            "clause_id": chunk.get("clause_id", ""),
+            "clause_references": json.dumps(chunk.get("clause_references", [])),
         }
 
         vectors_to_upsert.append({
@@ -50,7 +59,10 @@ async def _store_vectors_production(chunks: list[dict], document_id: str) -> Non
         })
 
     # Upsert in batches of 100
+    import re
     namespace = chunks[0].get("aerodrome_icao", "GLOBAL") if chunks else "GLOBAL"
+    if namespace != "GLOBAL" and not re.match(r"^[A-Z]{4}$", namespace):
+        raise ValueError(f"Invalid aerodrome namespace for Pinecone: {namespace!r}")
     batch_size = 100
     for i in range(0, len(vectors_to_upsert), batch_size):
         batch = vectors_to_upsert[i : i + batch_size]
@@ -80,6 +92,8 @@ async def _store_vectors_local(chunks: list[dict], document_id: str) -> None:
             "is_current": 1 if chunk.get("is_current", True) else 0,
             "effective_date": chunk.get("effective_date"),
             "expiry_date": chunk.get("expiry_date"),
+            "clause_id": chunk.get("clause_id", ""),
+            "clause_references": chunk.get("clause_references", []),
         })
 
     await upsert_vectors(vectors)

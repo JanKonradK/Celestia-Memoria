@@ -41,8 +41,11 @@ async def parse_pdf_from_url(url: str, filename: str = "document.pdf") -> str:
     import httpx
 
     async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.get(url)
-        response.raise_for_status()
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ValueError(f"Failed to download PDF from {url}: {e}") from e
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(response.content)
