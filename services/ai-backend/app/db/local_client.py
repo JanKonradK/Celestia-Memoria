@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from functools import lru_cache
+from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "celestia_local.db"
+
+# Allowed column names for document_metadata table (guards against SQL injection)
+_ALLOWED_METADATA_COLUMNS = frozenset({
+    "document_id", "doc_name", "doc_type", "aerodrome_icao",
+    "effective_date", "expiry_date", "is_current", "status",
+    "chunk_count", "storage_path", "error_message", "uploaded_by",
+    "created_at", "updated_at",
+})
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -55,6 +63,8 @@ def init_local_db() -> None:
             is_current INTEGER NOT NULL DEFAULT 1,
             effective_date TEXT,
             expiry_date TEXT,
+            clause_id TEXT NOT NULL DEFAULT '',
+            clause_references TEXT NOT NULL DEFAULT '[]',
             FOREIGN KEY (document_id) REFERENCES document_metadata(document_id)
         );
 
@@ -65,12 +75,26 @@ def init_local_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_vector_store_current
             ON vector_store(is_current);
     """)
+
+    # Migrate existing databases that lack the new columns
+    try:
+        conn.execute("ALTER TABLE vector_store ADD COLUMN clause_id TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute(
+            "ALTER TABLE vector_store ADD COLUMN clause_references "
+            "TEXT NOT NULL DEFAULT '[]'"
+        )
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 async def update_document_status(
@@ -107,6 +131,12 @@ async def insert_document_metadata(metadata: dict) -> None:
     metadata.setdefault("is_current", True)
     metadata.setdefault("status", "pending")
     metadata.setdefault("uploaded_by", "local")
+
+    # Validate column names to prevent SQL injection
+    invalid_keys = set(metadata.keys()) - _ALLOWED_METADATA_COLUMNS
+    if invalid_keys:
+        raise ValueError(f"Invalid metadata columns: {invalid_keys}")
+
     columns = ", ".join(metadata.keys())
     placeholders = ", ".join("?" for _ in metadata)
     conn.execute(
@@ -140,12 +170,16 @@ async def upsert_vectors(
     init_local_db()
     conn = _get_connection()
     for v in vectors:
+        clause_refs = v.get("clause_references", [])
+        if isinstance(clause_refs, list):
+            clause_refs = json.dumps(clause_refs)
         conn.execute(
             """INSERT OR REPLACE INTO vector_store
                (chunk_id, document_id, chunk_index, chunk_text, section_path,
                 page_number, token_count, embedding, doc_name, doc_type,
-                aerodrome_icao, is_current, effective_date, expiry_date)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                aerodrome_icao, is_current, effective_date, expiry_date,
+                clause_id, clause_references)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 v["chunk_id"],
                 v["document_id"],
@@ -161,6 +195,8 @@ async def upsert_vectors(
                 v.get("is_current", 1),
                 v.get("effective_date"),
                 v.get("expiry_date"),
+                v.get("clause_id", ""),
+                clause_refs,
             ),
         )
     conn.commit()
